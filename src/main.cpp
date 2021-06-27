@@ -3,10 +3,14 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "VEM.h"
+#include "BehaviorPlanner.h"
+#include "PathPlanner.h"
 
 // for convenience
 using nlohmann::json;
@@ -15,7 +19,6 @@ using std::vector;
 
 int main() {
   uWS::Hub h;
-
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
   vector<double> map_waypoints_y;
@@ -43,15 +46,18 @@ int main() {
     iss >> s;
     iss >> d_x;
     iss >> d_y;
-    map_waypoints_x.push_back(x);
-    map_waypoints_y.push_back(y);
-    map_waypoints_s.push_back(s);
+    Helpers::getInstance().m_map_waypoints_x.push_back(x);
+    Helpers::getInstance().m_map_waypoints_y.push_back(y);
+    Helpers::getInstance().m_map_waypoints_s.push_back(s);
     map_waypoints_dx.push_back(d_x);
     map_waypoints_dy.push_back(d_y);
   }
-
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy]
+  double ref_vel = 0.0;
+  auto environment = std::make_shared<VEM>();
+  BehaviorPlanner behaviorP(environment);
+  PathPlanner pathP(environment);
+  int counter = 100;
+  h.onMessage([&ref_vel, &behaviorP, &pathP, &counter, &environment]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -59,53 +65,37 @@ int main() {
     // The 2 signifies a websocket event
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
-      auto s = hasData(data);
+      auto s = Helpers::getInstance().hasData(data);
 
       if (s != "") {
         auto j = json::parse(s);
-        
         string event = j[0].get<string>();
-        
-        if (event == "telemetry") {
+
+        if (event == "telemetry")
+        {
           // j[1] is the data JSON object
-          
-          // Main car's localization Data
-          double car_x = j[1]["x"];
-          double car_y = j[1]["y"];
-          double car_s = j[1]["s"];
-          double car_d = j[1]["d"];
-          double car_yaw = j[1]["yaw"];
-          double car_speed = j[1]["speed"];
+          environment->update(j[1]);
 
-          // Previous path data given to the Planner
-          auto previous_path_x = j[1]["previous_path_x"];
-          auto previous_path_y = j[1]["previous_path_y"];
-          // Previous path's end s and d values 
-          double end_path_s = j[1]["end_path_s"];
-          double end_path_d = j[1]["end_path_d"];
-
-          // Sensor Fusion Data, a list of all other cars on the same side 
-          //   of the road.
-          auto sensor_fusion = j[1]["sensor_fusion"];
+          behaviorP.updateEnvironment(); //behavior module get environment update each cycle
+          if (counter == 100)
+          {
+            //egocar intent is updating every 3 seconds
+            behaviorP.updateIntent();
+            counter = 0;
+          }
+          counter++;
+          pathP.updatePreviousPath(j[1]);
+          pathP.updatePath();
 
           json msgJson;
 
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
-
-          /**
-           * TODO: define a path made up of (x,y) points that the car will visit
-           *   sequentially every .02 seconds
-           */
-
-
-          msgJson["next_x"] = next_x_vals;
-          msgJson["next_y"] = next_y_vals;
+          msgJson["next_x"] = pathP.m_next_x_vals;
+          msgJson["next_y"] = pathP.m_next_y_vals;
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-        }  // end "telemetry" if
+        } // end "telemetry" if
       } else {
         // Manual driving
         std::string msg = "42[\"manual\",{}]";

@@ -1,6 +1,44 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
-   
+
+### Implementation Details
+The current implementation of the path planning tries to mimic the human driving process. In addition each part of the planning is done by a separate module,
+so any module can be improved or alternated without affecting the other components.
+
+The following images shows the general structure of the implementation:
+
+![pathplan](pathplan.png)
+
+Each of the modules will be described shortly, details of the implementation can be found in code comments:
+
+* VEM (Input: Sensor Information Output: Vehicle Environment Model)
+This module is used to create a representation of the current environment using sensor information. 
+It updates the surrounding vehicles of the ego car and manages all the lanes and the vehicles on each lane. In addition, it creates a uniform data interface for the other modules. If sensor data format should changes, we only need to adapt this module.
+* Behavior Module (Input: VEM Output: Maneuver(lane change wish))
+This module is used to make a decision on maneuver level, that is whether to keep lane and perform a lane change. The decision will be carried out by other modules, in this module we only want to know what maneuver is desired by the ego car. Whether a lane change is desired is calculated as follows:
+  * if there is no preceeding vehicle, there is no intention for a lane change
+  * if there a preceeding vehicle, we calculate average lane velocity for the adjacent lanes, that is the average velocity of all cars in the front of the ego car on each lane
+  * if an adjacent lane has higher expected velocity, the lanechange wish value for that lane increases
+
+  After 100 cycles, the behavior module makes a decision whether a lane change is desired based on the lane change wish value of each lane, this is to prevent the car for changing lanes too quickly in cases where the maximum average speed between two lanes alternates. Also to mimic human decision process, where only after another lane has sustained higher velocity, the driver would prefer that lane.
+
+* Prediction Module (Input: Maneuver Output: safeToperform?)
+During Path planning, the prediction module is used to predict whether a desired maneuver (lane change) is safe to perform. Depending on the results, the target lane is specified to further path planning. If a lane change is not safe, the maneuver will be to keep the current lane. The Prediction is model based and uses the basic constant velocity model to calculate the future position of possibly dangerous vehicles (on the ego lane and target lane). If the s distance is too small, the prediction will mark the maneuver as dangerous.
+
+* Path Planning (Input: Maneuver + Prediction Result Output: Trajectory points)
+Using the results from previous modules, this module is responsible for calculating trajectory points for the simulator. In this implementation we use a spline with several anchor points to get a smooth trajectory. We uses two points from the previous path (if exists, else using the current and calculated previous position) and 3 calculated anchor points to generate the spline and use the methods from the classroom to calculate x-dist for our path points.
+
+For each of the modules, we used a very basic method/algorithm, for future improvement, we can further optimize our modules or use different approaches to compare the results. Some the the alternative are found in the following table:
+
+Behavior Module  | Prediction module | Path Planning Module
+------------- | ------------- | ------------- 
+FSM(cost function)  | motion models (e.g. http://fusion.isif.org/proceedings/fusion08CD/papers/1569107835.pdf) | JMT
+neural network  | neural network | hybrid A*
+cognitive architecture  | naive bayes|
+
+
+
+
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).  
 
